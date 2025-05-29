@@ -24,3 +24,21 @@ def get_distance(landmark_list):
     # Scale the distance from range [0, 1] to [0, 1000] for better usability
     # This makes the distance more readable or useful for UI/gesture detection
     return np.interp(L, [0, 1], [0, 1000])
+
+def fingers_up(landmark_list):                                               #For Right Hnad
+    fingers = []
+    fingers.append(landmark_list[4][0] < landmark_list[3][0])  # Thumb
+    fingers.append(landmark_list[8][1] < landmark_list[6][1])  # Index
+    fingers.append(landmark_list[12][1] < landmark_list[10][1])# Middle
+    fingers.append(landmark_list[16][1] < landmark_list[14][1])# Ring
+    fingers.append(landmark_list[20][1] < landmark_list[18][1])# Pinky
+    return fingers
+
+# def fingers_up(landmark_list):                                               #For Left Hnad
+#     fingers = []
+#     fingers.append(landmark_list[4][0] > landmark_list[3][0])  # Thumb
+#     fingers.append(landmark_list[8][1] < landmark_list[6][1])  # Index
+#     fingers.append(landmark_list[12][1] < landmark_list[10][1])# Middle
+#     fingers.append(landmark_list[16][1] < landmark_list[14][1])# Ring
+#     fingers.append(landmark_list[20][1] < landmark_list[18][1])# Pinky
+#     return fingers
