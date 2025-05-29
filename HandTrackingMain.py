@@ -4,15 +4,18 @@ import mediapipe as mp
 import autopy
 import pyautogui
 import util
+import time  
 import random
 from pynput.mouse import Button, Controller
 
 # Constants
 screen_width, screen_height = autopy.screen.size()
-print(screen_width,screen_height)
+#print(screen_width,screen_height)
 frame_width, frame_height = 840, 680
 frame_margin = 100
 smoothening = 8  # Higher values = smoother but slower response
+last_zoom_time = 0
+zoom_cooldown = 1.5  # seconds between zooms
 
 # Mouse controller
 mouse = Controller()
@@ -27,7 +30,7 @@ hands = mp_hands.Hands(
 )
 
 # State tracking
-prev_x, prev_y = 0,0                      #screen_width // 2, screen_height // 2
+prev_x, prev_y = screen_width // 2, screen_height // 2
 
 # Function to find the tip of the index finger from the processed hand landmarks
 def find_finger_tip(processed):
@@ -82,7 +85,6 @@ def move_mouse(index_finger_tip):
     # Update previous position variables for continuity in smoothing during the next call
     prev_x, prev_y = curr_x, curr_y
 
-
 def is_left_click(landmark_list, thumb_index_dist):
     return (
             util.get_angle(landmark_list[5], landmark_list[6], landmark_list[8]) < 50 and
@@ -113,21 +115,54 @@ def is_screenshot(landmark_list, thumb_index_dist):
     )
 
 def is_scroll_up(landmark_list):
-    """Detect scroll up gesture (index finger moves up vertically)"""
-    return (landmark_list[8][1] < landmark_list[6][1])  # Index finger tip is higher than its second joint
+    fingers = util.fingers_up(landmark_list)
+    return fingers == [False, True, True, True, False]  
 
 
 def is_scroll_down(landmark_list):
     """Detect scroll down gesture (index finger moves down vertically)"""
     return (landmark_list[8][1] > landmark_list[6][1])  # Index finger tip is lower than its second joint
+
+def hand_zoom_by_size(landmark_list):
+    global last_zoom_time
+    now = time.time()
+
+    if not landmark_list:
+        return None  # No hand detected
+
+    # Extract x and y values of all landmarks
+    xs = [pt[0] for pt in landmark_list]
+    ys = [pt[1] for pt in landmark_list]
+
+    # Get bounding box size (hand spread in frame)
+    width = max(xs) - min(xs)
+    #print(width)
+    height = max(ys) - min(ys)
+    #print(height)
+    hand_area = width * height  # area in normalized units (0–1 range)
+
+    # Tune these thresholds based on your camera setup
+    CLOSE_THRESHOLD = 0.13   # hand is close (large in frame)
+    FAR_THRESHOLD = 0.04     # hand is far (small in frame)
+
+    if hand_area > CLOSE_THRESHOLD and now - last_zoom_time > zoom_cooldown:
+        pyautogui.hotkey('ctrl', '-')  # Zoom Out
+        last_zoom_time = now
+        return "Zoom Out"
+    elif hand_area < FAR_THRESHOLD and now - last_zoom_time > zoom_cooldown:
+        pyautogui.hotkey('ctrl', '+')  # Zoom In
+        last_zoom_time = now
+        return "Zoom In"
     
+    return None
 
 def detect_gesture(frame, landmark_list, processed):
+    global prev_zoom_time
     if len(landmark_list) >= 21:
 
         index_finger_tip = find_finger_tip(processed)
         thumb_index_dist = util.get_distance([landmark_list[4], landmark_list[5]])
-
+    
         if util.get_distance([landmark_list[4], landmark_list[5]]) < 50  and util.get_angle(landmark_list[5], landmark_list[6], landmark_list[8]) > 90:
             move_mouse(index_finger_tip)
         elif is_left_click(landmark_list,  thumb_index_dist):
@@ -143,7 +178,7 @@ def detect_gesture(frame, landmark_list, processed):
             cv2.putText(frame, "Double Click", (50, 50), cv2.FONT_HERSHEY_DUPLEX, 1, (255, 255, 0), 2)
         elif is_screenshot(landmark_list,thumb_index_dist ):
             im1 = pyautogui.screenshot()
-            label = random.randint(1, 1000)
+            label = random.randint(1, 1000)   #The randint() method returns an integer number selected element from the specified range.
             im1.save(f'my_screenshot_{label}.png')
             cv2.putText(frame, "Screenshot Taken", (50, 50), cv2.FONT_HERSHEY_DUPLEX, 1, (255, 255, 0), 2)
         elif is_scroll_up(landmark_list):
@@ -153,7 +188,11 @@ def detect_gesture(frame, landmark_list, processed):
         elif is_scroll_down(landmark_list):
             pyautogui.scroll(-30)  # Negative value scrolls down
             cv2.putText(frame, "Scroll Down", (50, 50), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 255), 2)
-
+        zoom_action = hand_zoom_by_size(landmark_list)
+        if zoom_action:
+            cv2.putText(frame, zoom_action, (50, 100), cv2.FONT_HERSHEY_DUPLEX, 1.2, (0, 255, 255), 2)
+ 
+        
 def main():
     """Main program loop"""
     draw = mp.solutions.drawing_utils
@@ -168,7 +207,7 @@ def main():
             # Frame processing
             frame = cv2.resize(frame, (frame_width, frame_height))
             frame = cv2.flip(frame, 1)
-            cv2.rectangle(frame, (20, 50), (820, 660), (255, 0, 255), 2)
+            cv2.rectangle(frame, (50, 50), (790, 640), (255, 0, 255), 2)
             
             # Convert to RGB and process
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -181,8 +220,9 @@ def main():
                 
                 for lm in hand_landmarks.landmark:
                     landmark_list.append((lm.x, lm.y))
-            
+
             detect_gesture(frame, landmark_list, processed)
+
             
             cv2.imshow("Virtual Mouse", frame)
             if cv2.waitKey(1) == ord('q'):
